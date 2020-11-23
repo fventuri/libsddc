@@ -437,7 +437,7 @@ int sddc_start_streaming(sddc_t *this)
     uint8_t data = 0;
     int ret = usb_device_control(this->usb_device, R820T2STDBY, 0, 0, &data, 1);
     if (ret < 0) {
-      fprintf(stderr, "ERROR - usb_device_control(R820T2STDBY) failed: %i\n", ret);
+      fprintf(stderr, "ERROR - usb_device_control(R820T2STDBY) failed\n");
       return -1;
     }
   }
