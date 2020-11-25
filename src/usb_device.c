@@ -394,6 +394,7 @@ int usb_device_control(usb_device_t *this, uint8_t request, uint16_t value,
     case R820T2TUNE:
     case R820T2SETATT:
     case R820T2STDBY:
+    case R820T2SETVGA:
       ret = libusb_control_transfer(this->dev_handle, bmWriteRequestType,
                                     request, value, index, data, length,
                                     timeout);

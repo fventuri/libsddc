@@ -239,7 +239,8 @@ enum GPIOBits {
   GPIO_LED_RED    = 0x0800,
   GPIO_LED_BLUE   = 0x1000,
   GPIO_ATT_SEL0   = 0x2000,
-  GPIO_ATT_SEL1   = 0x4000
+  GPIO_ATT_SEL1   = 0x4000,
+  GPIO_VHF_EN     = 0x8000
 };
 
 static const uint16_t GPIO_LED_SHIFT = 10;

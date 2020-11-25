@@ -52,7 +52,8 @@ enum USBCommands {
   R820T2TUNE = 0xb5,
   R820T2SETATT = 0xb6,
   R820T2GETATT = 0xb7,
-  R820T2STDBY = 0xb8
+  R820T2STDBY = 0xb8,
+  R820T2SETVGA = 0xb9
 };
 
 int usb_device_count_devices();
