@@ -588,6 +588,8 @@ int sddc_stop_streaming(sddc_t *this)
       fprintf(stderr, "ERROR - streaming_stop() failed\n");
       return -1;
     }
+
+    streaming_close(this->streaming);
   }
 
   /* stop the clocks */
