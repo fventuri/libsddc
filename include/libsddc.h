@@ -48,7 +48,8 @@ enum SDDCHWModel {
   HW_UNKNOWN,
   HW_BBRF103,
   HW_HF103,
-  HW_RX888
+  HW_RX888,
+  HW_RX888R2
 };
 
 enum RFMode {
