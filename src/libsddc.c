@@ -169,8 +169,7 @@ FAIL0:
 
 void sddc_close(sddc_t *this)
 {
-  uint8_t data = 0;
-  int ret = usb_device_control(this->usb_device, RESETFX3, 0, 0, &data, 1);
+  int ret = usb_device_control(this->usb_device, RESETFX3, 0, 0, 0, 0);
   if (ret < 0) {
     fprintf(stderr, "ERROR - usb_device_control(RESETFX3) failed\n");
   }
@@ -435,8 +434,7 @@ int sddc_start_streaming(sddc_t *this)
 
   /* tuner in standby */
   if (this->has_vhf_tuner) {
-    uint8_t data = 0;
-    int ret = usb_device_control(this->usb_device, R820T2STDBY, 0, 0, &data, 1);
+    int ret = usb_device_control(this->usb_device, R820T2STDBY, 0, 0, 0, 0);
     if (ret < 0) {
       fprintf(stderr, "ERROR - usb_device_control(R820T2STDBY) failed\n");
       return -1;
@@ -468,8 +466,7 @@ int sddc_start_streaming(sddc_t *this)
   }
 
   /* start the producer */
-  uint8_t data = 0;
-  ret = usb_device_control(this->usb_device, STARTFX3, 0, 0, &data, 1);
+  ret = usb_device_control(this->usb_device, STARTFX3, 0, 0, 0, 0);
   if (ret < 0) {
     fprintf(stderr, "ERROR - usb_device_control(STARTFX3) failed\n");
     return -1;
@@ -493,8 +490,7 @@ int sddc_stop_streaming(sddc_t *this)
   }
 
   /* stop the producer */
-  uint8_t data = 0;
-  int ret = usb_device_control(this->usb_device, STOPFX3, 0, 0, &data, 1);
+  int ret = usb_device_control(this->usb_device, STOPFX3, 0, 0, 0, 0);
   if (ret < 0) {
     fprintf(stderr, "ERROR - usb_device_control(STOPFX3) failed\n");
     return -1;
