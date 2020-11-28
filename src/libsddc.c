@@ -434,7 +434,9 @@ int sddc_start_streaming(sddc_t *this)
 
   /* tuner in standby */
   if (this->has_vhf_tuner) {
-    int ret = usb_device_control(this->usb_device, R820T2STDBY, 0, 0, 0, 0);
+    uint8_t data = 0; // fv - not sure if this is right
+    int ret = usb_device_control(this->usb_device, R820T2STDBY, 0, 0,
+                                 (uint8_t *) &data, sizeof(data));
     if (ret < 0) {
       fprintf(stderr, "ERROR - usb_device_control(R820T2STDBY) failed\n");
       return -1;
@@ -546,7 +548,7 @@ double sddc_get_tuner_frequency(sddc_t *this)
 
 int sddc_set_tuner_frequency(sddc_t *this, double frequency)
 {
-  uint32_t data = (uint32_t) frequency;
+  uint64_t data = (uint64_t) frequency;
   int ret = usb_device_control(this->usb_device, R820T2TUNE, 0, 0,
                                (uint8_t *) &data, sizeof(data));
   if (ret < 0) {

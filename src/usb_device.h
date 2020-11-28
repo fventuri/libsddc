@@ -47,13 +47,13 @@ enum USBCommands {
   DAT31FX3 = 0xb0,
   RESETFX3 = 0xb1,
   SI5351A = 0xb2,
-  SI5351ATUNE = 0xb3, /* ??? */
   R820T2INIT = 0xb4,
   R820T2TUNE = 0xb5,
   R820T2SETATT = 0xb6,
   R820T2GETATT = 0xb7,
   R820T2STDBY = 0xb8,
-  R820T2SETVGA = 0xb9
+  R820T2SETVGA = 0xb9,
+  AD8340FX3 = 0xba
 };
 
 int usb_device_count_devices();
