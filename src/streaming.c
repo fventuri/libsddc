@@ -269,7 +269,7 @@ int streaming_stop(streaming_t *this)
 
   /* flush all the events */
   struct timeval noblock = { 0, 0 };
-  int ret = libusb_handle_events_timeout_completed(0, &noblock, 0);
+  int ret = libusb_handle_events_timeout_completed(this->usb_device->context, &noblock, 0);
   if (ret < 0) {
     log_usb_error(ret, __func__, __FILE__, __LINE__);
     this->status = STREAMING_STATUS_FAILED;
