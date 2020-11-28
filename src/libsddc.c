@@ -633,7 +633,7 @@ double sddc_get_tuner_frequency(sddc_t *this)
 
 int sddc_set_tuner_frequency(sddc_t *this, double frequency)
 {
-  uint32_t data = (uint32_t) frequency;
+  uint64_t data = (uint64_t) frequency;
   int ret = usb_device_control(this->usb_device, R820T2TUNE, 0, 0,
                                (uint8_t *) &data, sizeof(data));
   if (ret < 0) {
