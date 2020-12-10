@@ -45,11 +45,12 @@ enum SDDCStatus {
 };
 
 enum SDDCHWModel {
-  HW_UNKNOWN,
+  HW_NORADIO,
   HW_BBRF103,
   HW_HF103,
   HW_RX888,
-  HW_RX888R2
+  HW_RX888R2,
+  HW_RX999
 };
 
 enum RFMode {
@@ -80,20 +81,26 @@ enum SDDCStatus sddc_get_status(sddc_t *this);
 
 enum SDDCHWModel sddc_get_hw_model(sddc_t *this);
 
+const char *sddc_get_hw_model_name(sddc_t *this);
+
 uint16_t sddc_get_firmware(sddc_t *this);
+
+const double *sddc_get_frequency_range(sddc_t *this);
 
 enum RFMode sddc_get_rf_mode(sddc_t *this);
 
 int sddc_set_rf_mode(sddc_t *this, enum RFMode rf_mode);
 
 
-/* GPIO related functions */
+/* LED functions */
 int sddc_led_on(sddc_t *this, uint8_t led_pattern);
 
 int sddc_led_off(sddc_t *this, uint8_t led_pattern);
 
 int sddc_led_toggle(sddc_t *this, uint8_t led_pattern);
 
+
+/* ADC functions */
 int sddc_get_adc_dither(sddc_t *this);
 
 int sddc_set_adc_dither(sddc_t *this, int dither);
@@ -102,20 +109,44 @@ int sddc_get_adc_random(sddc_t *this);
 
 int sddc_set_adc_random(sddc_t *this, int random);
 
+
+/* HF block functions */
+double sddc_get_hf_attenuation(sddc_t *this);
+
 int sddc_set_hf_attenuation(sddc_t *this, double attenuation);
 
 int sddc_get_hf_bias(sddc_t *this);
 
 int sddc_set_hf_bias(sddc_t *this, int bias);
 
+
+/* VHF block and VHF/UHF tuner functions */
+double sddc_get_tuner_frequency(sddc_t *this);
+
+int sddc_set_tuner_frequency(sddc_t *this, double frequency);
+
+int sddc_get_tuner_rf_attenuations(sddc_t *this, const double *attenuations[]);
+
+double sddc_get_tuner_rf_attenuation(sddc_t *this);
+
+int sddc_set_tuner_rf_attenuation(sddc_t *this, double attenuation);
+
+int sddc_get_tuner_if_attenuations(sddc_t *this, const double *attenuations[]);
+
+double sddc_get_tuner_if_attenuation(sddc_t *this);
+
+int sddc_set_tuner_if_attenuation(sddc_t *this, double attenuation);
+
 int sddc_get_vhf_bias(sddc_t *this);
 
 int sddc_set_vhf_bias(sddc_t *this, int bias);
 
 
-/* streaming related functions */
+/* streaming functions */
 typedef void (*sddc_read_async_cb_t)(uint32_t data_size, uint8_t *data,
                                       void *context);
+
+double sddc_get_sample_rate(sddc_t *this);
 
 int sddc_set_sample_rate(sddc_t *this, double sample_rate);
 
@@ -132,18 +163,6 @@ int sddc_stop_streaming(sddc_t *this);
 int sddc_reset_status(sddc_t *this);
 
 int sddc_read_sync(sddc_t *this, uint8_t *data, int length, int *transferred);
-
-
-/* VHF/UHF tuner functions */
-double sddc_get_tuner_frequency(sddc_t *this);
-
-int sddc_set_tuner_frequency(sddc_t *this, double frequency);
-
-int sddc_get_tuner_attenuations(sddc_t *this, const double *attenuations[]);
-
-double sddc_get_tuner_attenuation(sddc_t *this);
-
-int sddc_set_tuner_attenuation(sddc_t *this, double attenuation);
 
 
 /* Misc functions */

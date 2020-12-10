@@ -43,6 +43,8 @@ typedef struct usb_device {
   uint16_t bulk_in_max_packet_size;
   uint8_t bulk_in_max_burst;
   uint16_t gpio_register;
+#define MAX_FW_REGISTERS (16)
+  uint16_t fw_registers[MAX_FW_REGISTERS];
 } usb_device_t;
 typedef struct usb_device usb_device_t;
 

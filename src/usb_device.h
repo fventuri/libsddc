@@ -44,16 +44,12 @@ enum USBCommands {
   GPIOFX3 = 0xad,
   I2CWFX3 = 0xae,
   I2CRFX3 = 0xaf,
-  DAT31FX3 = 0xb0,
   RESETFX3 = 0xb1,
-  SI5351A = 0xb2,
-  R820T2INIT = 0xb4,
-  R820T2TUNE = 0xb5,
-  R820T2SETATT = 0xb6,
-  R820T2GETATT = 0xb7,
-  R820T2STDBY = 0xb8,
-  R820T2SETVGA = 0xb9,
-  AD8340FX3 = 0xba
+  SETARGFX3 = 0xb6,
+  STARTADC = 0xb2,
+  R82XXINIT = 0xb4,
+  R82XXTUNE = 0xb5,
+  R82XXSTDBY = 0xb8,
 };
 
 int usb_device_count_devices();
@@ -93,6 +89,11 @@ int usb_device_i2c_write_byte(usb_device_t *this, uint8_t i2c_address,
 int usb_device_i2c_read(usb_device_t *this, uint8_t i2c_address,
                         uint8_t register_address, uint8_t *data,
                         uint8_t length);
+
+uint16_t usb_device_get_fw_register(usb_device_t *this, uint16_t address);
+
+int usb_device_set_fw_register(usb_device_t *this, uint16_t address,
+                               uint16_t value);
 
 #ifdef __cplusplus
 }

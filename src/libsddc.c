@@ -32,12 +32,8 @@
 
 typedef struct sddc sddc_t;
 
+
 /* internal functions */
-static int sddc_set_clock_source(sddc_t *this, double adc_frequency,
-                                 double tuner_clock);
-
-static int sddc_set_tuner_clock(sddc_t *this, double tuner_clock);
-
 static int sddc_set_vhf_gpios(sddc_t *this);
 
 
@@ -57,6 +53,7 @@ typedef struct sddc {
   double tuner_attenuation;
   double tuner_clock;
   double freq_corr_ppm;
+  double frequency_range[2];
 } sddc_t;
 
 
@@ -77,7 +74,6 @@ int sddc_get_device_count()
 {
   return usb_device_count_devices();
 }
-
 
 int sddc_get_device_info(struct sddc_device_info **sddc_device_infos)
 {
@@ -109,7 +105,6 @@ FAIL0:
   return ret_val;
 }
 
-
 int sddc_free_device_info(struct sddc_device_info *sddc_device_infos)
 {
   /* just free our structure and call usb_device_free_device_list() to free
@@ -121,7 +116,6 @@ int sddc_free_device_info(struct sddc_device_info *sddc_device_infos)
   int ret = usb_device_free_device_list(list);
   return ret;
 }
-
 
 sddc_t *sddc_open(int index, const char* imagefile)
 {
@@ -152,16 +146,22 @@ sddc_t *sddc_open(int index, const char* imagefile)
       this->has_clock_source = 1;
       this->has_vhf_tuner = 1;
       this->hf_attenuator_levels = 3;
+      this->frequency_range[0] = 10e3;
+      this->frequency_range[1] = 1750e6;
       break;
     case HW_HF103:
       this->has_clock_source = 0;
       this->has_vhf_tuner = 0;
       this->hf_attenuator_levels = 32;
+      this->frequency_range[0] = 0;
+      this->frequency_range[1] = 32e6;
       break;
     default:
       this->has_clock_source = 0;
       this->has_vhf_tuner = 0;
       this->hf_attenuator_levels = 0;
+      this->frequency_range[0] = 0;
+      this->frequency_range[1] = 0;
       break;
   }
   this->sample_rate = DEFAULT_SAMPLE_RATE;             /* default sample rate */
@@ -180,7 +180,6 @@ FAIL0:
   return ret_val;
 }
 
-
 void sddc_close(sddc_t *this)
 {
   int ret = usb_device_control(this->usb_device, RESETFX3, 0, 0, 0, 0);
@@ -192,30 +191,30 @@ void sddc_close(sddc_t *this)
   return;
 }
 
-
 enum SDDCStatus sddc_get_status(sddc_t *this)
 {
   return this->status;
 }
-
 
 enum SDDCHWModel sddc_get_hw_model(sddc_t *this)
 {
   return this->model;
 }
 
-
 uint16_t sddc_get_firmware(sddc_t *this)
 {
   return this->firmware;
 }
 
+const double *sddc_get_frequency_range(sddc_t *this)
+{
+  return this->frequency_range;
+}
 
 enum RFMode sddc_get_rf_mode(sddc_t *this)
 {
   return this->rf_mode;
 }
-
 
 int sddc_set_rf_mode(sddc_t *this, enum RFMode rf_mode)
 {
@@ -224,24 +223,17 @@ int sddc_set_rf_mode(sddc_t *this, enum RFMode rf_mode)
     case HF_MODE:
       this->rf_mode = HF_MODE;
 
-      // set tuner to standby
-      ret = usb_device_control(this->usb_device, R820T2STDBY, 0, 0, 0, 0);
+      /* stop tuner */
+      ret = usb_device_control(this->usb_device, R82XXSTDBY, 0, 0, 0, 0);
       if (ret < 0) {
-        fprintf(stderr, "ERROR - usb_device_control(R820T2STDBY) failed\n");
+        fprintf(stderr, "ERROR - usb_device_control(R82XXSTDBY) failed\n");
         return -1;
       }
 
-      // switch to HF input and restore hf attenuation
+      /* switch to HF input and restore hf attenuation */
       ret = sddc_set_hf_attenuation(this, this->hf_attenuation);
       if (ret < 0) {
         fprintf(stderr, "ERROR - sddc_set_hf_attenuation() failed\n");
-        return -1;
-      }
-
-      // disable tuner clock
-      ret = sddc_set_tuner_clock(this, 0);
-      if (ret < 0) {
-        fprintf(stderr, "ERROR - sddc_set_tuner_clock() failed\n");
         return -1;
       }
 
@@ -253,33 +245,21 @@ int sddc_set_rf_mode(sddc_t *this, enum RFMode rf_mode)
       }
       this->rf_mode = VHF_MODE;
 
-      // activate tuner clock
-      ret = sddc_set_tuner_clock(this, TUNER_CLOCK);
-      if (ret < 0) {
-        fprintf(stderr, "ERROR - sddc_set_tuner_clock() failed\n");
-        return -1;
-      }
-
-      // initialize the tuner
-      // 4 bytes, currently not used in firmware
-      uint8_t data[4] = {0};
-      ret = usb_device_control(this->usb_device, R820T2INIT, 0, 0, data, sizeof(data));
-      if (ret < 0) {
-        fprintf(stderr, "ERROR - usb_device_control(R820T2INIT) failed\n");
-        return -1;
-      }
-
-      // switch to tuner input
+      /* switch to VHF input */
       ret = sddc_set_vhf_gpios(this);
       if (ret < 0) {
-        fprintf(stderr, "ERROR - usb_device_gpio_set() failed\n");
+        fprintf(stderr, "ERROR - sddc_set_vhf_gpios() failed\n");
         return -1;
       }
 
-      // restore / set tuner gain
-      ret = sddc_set_tuner_attenuation(this, this->tuner_attenuation);
+      /* initialize tuner */
+      /* tuner reference frequency */
+      double correction = 1e-6 * this->freq_corr_ppm * this->tuner_clock;
+      uint32_t data = (uint32_t) (this->tuner_clock + correction);
+      ret = usb_device_control(this->usb_device, R82XXINIT, 0, 0,
+                               (uint8_t *) &data, sizeof(data));
       if (ret < 0) {
-        fprintf(stderr, "ERROR - sddc_set_tuner_attenuation() failed\n");
+        fprintf(stderr, "ERROR - usb_device_control(R82XXINIT) failed\n");
         return -1;
       }
 
@@ -291,10 +271,6 @@ int sddc_set_rf_mode(sddc_t *this, enum RFMode rf_mode)
   return 0;
 }
 
-
-/******************************
- * GPIO related functions
- ******************************/
 
 enum GPIOBits {
   GPIO_ADC_SHDN   = 0x0020,
@@ -313,7 +289,20 @@ enum GPIOBits {
 static const uint16_t GPIO_LED_SHIFT = 10;
 
 
+enum FWRegAddresses {
+  FW_REG_R82XX_ATTENUATOR = 0x01,  /* R8xx lna/mixer gain - range: 0-29 */
+  FW_REG_R82XX_VGA        = 0x02,  /* R8xx vga gain - range: 0-15 */
+  FW_REG_R82XX_SIDEBAND   = 0x03,  /* R8xx sideband - {0,1} */
+  FW_REG_R82XX_HARMONIC   = 0x04,  /* R8xx harmonic - {0,1} */
+  FW_REG_DAT31_ATT        = 0x0a,  /* DAT-31 att - range: 0-63 */
+  FW_REG_AD8340_VGA       = 0x0b,  /* AD8340 chip vga - range: 0-255 */
+  FW_REG_PRESELECTOR      = 0x0c   /* preselector - range: 0-2 */
+};
 
+
+/*****************
+ * LED functions *
+ *****************/
 int sddc_led_on(sddc_t *this, uint8_t led_pattern)
 {
   if (led_pattern & ~(LED_YELLOW | LED_RED | LED_BLUE)) {
@@ -323,7 +312,6 @@ int sddc_led_on(sddc_t *this, uint8_t led_pattern)
   return usb_device_gpio_on(this->usb_device, (uint16_t) led_pattern << GPIO_LED_SHIFT);
 }
 
-
 int sddc_led_off(sddc_t *this, uint8_t led_pattern)
 {
   if (led_pattern & ~(LED_YELLOW | LED_RED | LED_BLUE)) {
@@ -332,7 +320,6 @@ int sddc_led_off(sddc_t *this, uint8_t led_pattern)
   }
   return usb_device_gpio_off(this->usb_device, (uint16_t) led_pattern << GPIO_LED_SHIFT);
 }
-
 
 int sddc_led_toggle(sddc_t *this, uint8_t led_pattern)
 {
@@ -344,11 +331,13 @@ int sddc_led_toggle(sddc_t *this, uint8_t led_pattern)
 }
 
 
+/*****************
+ * ADC functions *
+ *****************/
 int sddc_get_adc_dither(sddc_t *this)
 {
   return (usb_device_gpio_get(this->usb_device) & GPIO_ADC_DITH) != 0;
 }
-
 
 int sddc_set_adc_dither(sddc_t *this, int dither)
 {
@@ -359,12 +348,10 @@ int sddc_set_adc_dither(sddc_t *this, int dither)
   }
 }
 
-
 int sddc_get_adc_random(sddc_t *this)
 {
   return (usb_device_gpio_get(this->usb_device) & GPIO_ADC_RAND) != 0;
 }
-
 
 int sddc_set_adc_random(sddc_t *this, int random)
 {
@@ -375,6 +362,14 @@ int sddc_set_adc_random(sddc_t *this, int random)
   }
 }
 
+
+/**********************
+ * HF block functions *
+ **********************/
+double sddc_get_hf_attenuation(sddc_t *this)
+{
+  return this->hf_attenuation;
+}
 
 int sddc_set_hf_attenuation(sddc_t *this, double attenuation)
 {
@@ -403,14 +398,14 @@ int sddc_set_hf_attenuation(sddc_t *this, double attenuation)
                                GPIO_ATT_SEL0 | GPIO_ATT_SEL1);
   } else if (this->hf_attenuator_levels == 32) {
     /* new style attenuator with 1dB increments */
-    if (attenuation < 0.0 || attenuation > 31.0) {
+    if (attenuation < 0.0 || attenuation > this->hf_attenuator_levels - 1) {
       fprintf(stderr, "ERROR - invalid HF attenuation: %lf\n", attenuation);
       return -1;
     }
     this->hf_attenuation = attenuation;
-    uint8_t data = (31 - (int) attenuation) << 1;
-    return usb_device_control(this->usb_device, DAT31FX3, 0, 0, &data,
-                              sizeof(data));
+    uint16_t dat31_att = (this->hf_attenuator_levels - 1 - (int) attenuation);
+    return usb_device_set_fw_register(this->usb_device, FW_REG_DAT31_ATT,
+                                      dat31_att);
   }
 
   /* should never get here */
@@ -419,17 +414,10 @@ int sddc_set_hf_attenuation(sddc_t *this, double attenuation)
   return -1;
 }
 
-// helper method to configure GPIOs for VHF
-int sddc_set_vhf_gpios(sddc_t* this) {
-    return usb_device_gpio_set(this->usb_device, 0, GPIO_ATT_SEL0 | GPIO_ATT_SEL1);
-}
-
-
 int sddc_get_hf_bias(sddc_t *this)
 {
   return (usb_device_gpio_get(this->usb_device) & GPIO_BIAS_HF) != 0;
 }
-
 
 int sddc_set_hf_bias(sddc_t *this, int bias)
 {
@@ -441,11 +429,125 @@ int sddc_set_hf_bias(sddc_t *this, int bias)
 }
 
 
+/*****************************************
+ * VHF block and VHF/UHF tuner functions *
+ *****************************************/
+double sddc_get_tuner_frequency(sddc_t *this)
+{
+  return this->tuner_frequency;
+}
+
+int sddc_set_tuner_frequency(sddc_t *this, double frequency)
+{
+  uint64_t data = (uint64_t) frequency;
+  int ret = usb_device_control(this->usb_device, R82XXTUNE, 0, 0,
+                               (uint8_t *) &data, sizeof(data));
+  if (ret < 0) {
+    fprintf(stderr, "ERROR - usb_device_control(R82XXTUNE) failed\n");
+    return -1;
+  }
+  this->tuner_frequency = frequency;
+  return 0;
+}
+
+
+/* tuner attenuations - LNA/mixer */
+static const double tuner_rf_attenuations_table[] = {
+  0.0, 0.9, 1.4, 2.7, 3.7, 7.7, 8.7, 12.5, 14.4, 15.7, 16.6, 19.7, 20.7,
+  22.9, 25.4, 28.0, 29.7, 32.8, 33.8, 36.4, 37.2, 38.6, 40.2, 42.1, 43.4,
+  43.9, 44.5, 48.0, 49.6
+};
+
+int sddc_get_tuner_rf_attenuations(sddc_t *this __attribute__((unused)),
+                                   const double *attenuations[])
+{
+  *attenuations = tuner_rf_attenuations_table;
+  return sizeof(tuner_rf_attenuations_table) / sizeof(tuner_rf_attenuations_table[0]);
+}
+
+double sddc_get_tuner_rf_attenuation(sddc_t *this)
+{
+  uint16_t r82xx_attenuator = usb_device_get_fw_register(this->usb_device,
+                                                         FW_REG_R82XX_ATTENUATOR);
+  return tuner_rf_attenuations_table[(int) r82xx_attenuator];
+}
+
+int sddc_set_tuner_rf_attenuation(sddc_t *this, double attenuation)
+{
+  int rf_attenuation_table_size = sizeof(tuner_rf_attenuations_table) /
+                                  sizeof(tuner_rf_attenuations_table[0]);
+  uint16_t idx = 0;
+  double idx_att = fabs(attenuation - tuner_rf_attenuations_table[idx]);
+  for (int i = 1; i < rf_attenuation_table_size; ++i) {
+    double att = fabs(attenuation - tuner_rf_attenuations_table[i]);
+    if (att < idx_att) {
+      idx = i;
+      idx_att = att;
+    }
+  }
+
+  int ret = usb_device_set_fw_register(this->usb_device,
+                                       FW_REG_R82XX_ATTENUATOR, idx);
+  if (ret < 0) {
+    fprintf(stderr, "ERROR - usb_device_set_fw_register(FW_REG_R82XX_ATTENUATOR) failed\n");
+    return -1;
+  }
+
+  fprintf(stderr, "INFO - RF tuner attenuation set to %.1f\n",
+          tuner_rf_attenuations_table[idx]);
+  return 0;
+}
+
+
+/* tuner attenuations - VGA */
+static const double tuner_if_attenuations_table[] = {
+  -4.7, -2.1, 0.5, 3.5, 7.7, 11.2, 13.6, 14.9, 16.3, 19.5, 23.1, 26.5,
+  30.0, 33.7, 37.2, 40.8
+};
+
+int sddc_get_tuner_if_attenuations(sddc_t *this __attribute__((unused)),
+                                   const double *attenuations[])
+{
+  *attenuations = tuner_if_attenuations_table;
+  return sizeof(tuner_if_attenuations_table) / sizeof(tuner_if_attenuations_table[0]);
+}
+
+double sddc_get_tuner_if_attenuation(sddc_t *this)
+{
+  uint16_t r82xx_vga = usb_device_get_fw_register(this->usb_device,
+                                                  FW_REG_R82XX_VGA);
+  return tuner_if_attenuations_table[(int) r82xx_vga];
+}
+
+int sddc_set_tuner_if_attenuation(sddc_t *this, double attenuation)
+{
+  int if_attenuation_table_size = sizeof(tuner_if_attenuations_table) /
+                                  sizeof(tuner_if_attenuations_table[0]);
+  uint16_t idx = 0;
+  double idx_att = fabs(attenuation - tuner_if_attenuations_table[idx]);
+  for (int i = 1; i < if_attenuation_table_size; ++i) {
+    double att = fabs(attenuation - tuner_if_attenuations_table[i]);
+    if (att < idx_att) {
+      idx = i;
+      idx_att = att;
+    }
+  }
+
+  int ret = usb_device_set_fw_register(this->usb_device, FW_REG_R82XX_VGA, idx);
+  if (ret < 0) {
+    fprintf(stderr, "ERROR - usb_device_set_fw_register(FW_REG_R82XX_VGA) failed\n");
+    return -1;
+  }
+
+  fprintf(stderr, "INFO - IF tuner attenuation set to %.1f\n",
+          tuner_if_attenuations_table[idx]);
+  return 0;
+}
+
 int sddc_get_vhf_bias(sddc_t *this)
 {
   return (usb_device_gpio_get(this->usb_device) & GPIO_BIAS_VHF) != 0;
 }
-
 
 int sddc_set_vhf_bias(sddc_t *this, int bias)
 {
@@ -460,24 +562,13 @@ int sddc_set_vhf_bias(sddc_t *this, int bias)
 /******************************
  * streaming related functions
  ******************************/
-
 int sddc_set_sample_rate(sddc_t *this, double sample_rate)
 {
   /* no checks yet */
   this->sample_rate = sample_rate;
 
-  if (this->has_clock_source) {
-    int ret = sddc_set_clock_source(this, (double) this->sample_rate,
-                                    this->tuner_clock);
-    if (ret < 0) {
-      fprintf(stderr, "ERROR - sddc_set_clock_source() failed\n");
-      return -1;
-    }
-  }
-
   return 0;
 }
-
 
 int sddc_set_async_params(sddc_t *this, uint32_t frame_size,
                            uint32_t num_frames, sddc_read_async_cb_t callback,
@@ -499,7 +590,6 @@ int sddc_set_async_params(sddc_t *this, uint32_t frame_size,
   return 0;
 }
 
-
 int sddc_start_streaming(sddc_t *this)
 {
   if (this->status != SDDC_STATUS_READY) {
@@ -507,37 +597,27 @@ int sddc_start_streaming(sddc_t *this)
     return -1;
   }
 
-  /* start the clocks */
-  if (this->has_clock_source) {
-    int ret = sddc_set_clock_source(this, (double) this->sample_rate,
-                                    this->tuner_clock);
-    if (ret < 0) {
-      fprintf(stderr, "ERROR - sddc_set_clock_source() failed\n");
-      return -1;
-    }
-  }
+  /* ADC sampling frequency */
+  double correction = 1e-6 * this->freq_corr_ppm * this->sample_rate;
+  uint32_t data = (uint32_t) (this->sample_rate + correction);
 
-  /* tuner in standby */
-  if (this->has_vhf_tuner) {
-    uint8_t data = 0; // fv - not sure if this is right
-    int ret = usb_device_control(this->usb_device, R820T2STDBY, 0, 0,
-                                 (uint8_t *) &data, sizeof(data));
-    if (ret < 0) {
-      fprintf(stderr, "ERROR - usb_device_control(R820T2STDBY) failed\n");
-      return -1;
-    }
-  }
-
-  /* set HF and VHF attenuation to 0 */
-  int ret = sddc_set_hf_attenuation(this, 0.0);
+  int ret = usb_device_control(this->usb_device, STARTADC, 0, 0,
+                               (uint8_t *) &data, sizeof(data));
   if (ret < 0) {
-    fprintf(stderr, "ERROR - sddc_set_hf_attenuation() failed\n");
+    fprintf(stderr, "ERROR - usb_device_control(STARTADC) failed\n");
     return -1;
   }
-  if (this->has_vhf_tuner) {
-    int ret = sddc_set_tuner_attenuation(this, 0);
+
+  /* initialize tuner */
+  if (this->rf_mode == VHF_MODE) {
+    /* tuner reference frequency */
+    double correction = 1e-6 * this->freq_corr_ppm * TUNER_CLOCK;
+    uint32_t data = (uint32_t) (TUNER_CLOCK + correction);
+
+    int ret = usb_device_control(this->usb_device, R82XXINIT, 0, 0,
+                                 (uint8_t *) &data, sizeof(data));
     if (ret < 0) {
-      fprintf(stderr, "ERROR - sddc_set_tuner_attenuation() failed\n");
+      fprintf(stderr, "ERROR - usb_device_control(R82XXINIT) failed\n");
       return -1;
     }
   }
@@ -594,10 +674,21 @@ int sddc_stop_streaming(sddc_t *this)
     streaming_close(this->streaming);
   }
 
-  /* stop the clocks */
-  ret = sddc_set_clock_source(this, 0, 0);
+  /* stop tuner */
+  if (this->rf_mode == VHF_MODE) {
+    int ret = usb_device_control(this->usb_device, R82XXSTDBY, 0, 0, 0, 0);
+    if (ret < 0) {
+      fprintf(stderr, "ERROR - usb_device_control(R82XXSTDBY) failed\n");
+      return -1;
+    }
+  }
+
+  /* stop ADC */
+  uint32_t data = 0;
+  ret = usb_device_control(this->usb_device, STARTADC, 0, 0, 
+                           (uint8_t *) &data, sizeof(data));
   if (ret < 0) {
-    fprintf(stderr, "ERROR - sddc_set_clock_source(0, 0) failed\n");
+    fprintf(stderr, "ERROR - usb_device_control(STARTADC) failed\n");
     return -1;
   }
 
@@ -605,7 +696,6 @@ int sddc_stop_streaming(sddc_t *this)
   this->status = SDDC_STATUS_READY;
   return 0;
 }
-
 
 int sddc_reset_status(sddc_t *this)
 {
@@ -617,107 +707,15 @@ int sddc_reset_status(sddc_t *this)
   return 0;
 }
 
-
 int sddc_read_sync(sddc_t *this, uint8_t *data, int length, int *transferred)
 {
   return streaming_read_sync(this->streaming, data, length, transferred);
 }
 
 
-/***********************************
- * VHF/UHF tuner related functions
- ***********************************/
-
-double sddc_get_tuner_frequency(sddc_t *this)
-{
-  return this->tuner_frequency;
-}
-
-int sddc_set_tuner_frequency(sddc_t *this, double frequency)
-{
-  uint64_t data = (uint64_t) frequency;
-  int ret = usb_device_control(this->usb_device, R820T2TUNE, 0, 0,
-                               (uint8_t *) &data, sizeof(data));
-  if (ret < 0) {
-    fprintf(stderr, "ERROR - usb_device_control(R820T2TUNE) failed\n");
-    return -1;
-  }
-  this->tuner_frequency = frequency;
-  return 0;
-}
-
-int sddc_set_tuner_clock(sddc_t *this, double tuner_clock)
-{
-    this->tuner_clock = tuner_clock;
-    if (this->has_clock_source) {
-      // disable tuner clock
-      int ret = sddc_set_clock_source(this, (double) this->sample_rate,
-                                      this->tuner_clock);
-      if (ret < 0) {
-        fprintf(stderr, "ERROR - sddc_set_clock_source() failed\n");
-        return -1;
-      }
-    }
-    return 0;
-}
-
-/* tuner attenuations */
-static const double tuner_attenuations_table[] = {
-  0.0, 0.9, 1.4, 2.7, 3.7, 7.7, 8.7, 12.5, 14.4, 15.7, 16.6, 19.7, 20.7,
-  22.9, 25.4, 28.0, 29.7, 32.8, 33.8, 36.4, 37.2, 38.6, 40.2, 42.1, 43.4,
-  43.9, 44.5, 48.0, 49.6
-};
-
-int sddc_get_tuner_attenuations(sddc_t *this __attribute__((unused)),
-                                const double *attenuations[])
-{
-  *attenuations = tuner_attenuations_table;
-  return sizeof(tuner_attenuations_table) / sizeof(tuner_attenuations_table[0]);
-}
-
-double sddc_get_tuner_attenuation(sddc_t *this)
-{
-  uint8_t data = 0;
-  int ret = usb_device_control(this->usb_device, R820T2GETATT, 0, 0, &data,
-                               sizeof(data));
-  if (ret < 0) {
-    fprintf(stderr, "ERROR - usb_device_control(R820T2GETATT) failed\n");
-    return -1;
-  }
-  return tuner_attenuations_table[(int) data];
-}
-
-int sddc_set_tuner_attenuation(sddc_t *this, double attenuation)
-{
-  int attenuation_table_size = sizeof(tuner_attenuations_table) /
-                               sizeof(tuner_attenuations_table[0]);
-  uint8_t idx = 0;
-  double idx_att = fabs(attenuation - tuner_attenuations_table[idx]);
-  for (int i = 1; i < attenuation_table_size; ++i) {
-    double att = fabs(attenuation - tuner_attenuations_table[i]);
-    if (att < idx_att) {
-      idx = i;
-      idx_att = att;
-    }
-  }
-
-  int ret = usb_device_control(this->usb_device, R820T2SETATT, 0, 0, &idx,
-                               sizeof(idx));
-  if (ret < 0) {
-    fprintf(stderr, "ERROR - usb_device_control(R820T2SETATT) failed\n");
-    return -1;
-  }
-
-  fprintf(stderr, "INFO - tuner attenuation set to %.1f\n",
-          tuner_attenuations_table[idx]);
-  return 0;
-}
-
-
 /******************************
  * Misc functions
  ******************************/
-
 double sddc_get_frequency_correction(sddc_t *this)
 {
   return this->freq_corr_ppm;
@@ -726,12 +724,8 @@ double sddc_get_frequency_correction(sddc_t *this)
 int sddc_set_frequency_correction(sddc_t *this, double correction)
 {
   if (this->status == SDDC_STATUS_STREAMING) {
-    int ret = sddc_set_clock_source(this, (double) this->sample_rate,
-                                    this->tuner_clock);
-    if (ret < 0) {
-      fprintf(stderr, "ERROR - sddc_set_clock_source() failed\n");
-      return -1;
-    }
+    fprintf(stderr, "ERROR - sddc_set_frequency_correction() failed - device is streaming\n");
+    return -1;
   }
   this->freq_corr_ppm = correction;
   return 0;
@@ -739,22 +733,7 @@ int sddc_set_frequency_correction(sddc_t *this, double correction)
 
 
 /* internal functions */
-static int sddc_set_clock_source(sddc_t *this, double adc_frequency,
-                                 double tuner_clock)
-{
-  uint32_t data[2];
-  /* ADC sampling frequency */
-  double correction = 1e-6 * this->freq_corr_ppm * adc_frequency;
-  data[0] = (uint32_t) (adc_frequency + correction);
-  /* tuner reference frequency */
-  correction = 1e-6 * this->freq_corr_ppm * tuner_clock;
-  data[1] = (uint32_t) (tuner_clock + correction);
-
-  int ret = usb_device_control(this->usb_device, SI5351A, 0, 0,
-                               (uint8_t *) data, sizeof(data));
-  if (ret < 0) {
-    fprintf(stderr, "ERROR - usb_device_control(SI5351A) failed\n");
-    return -1;
-  }
-  return 0;
+/* helper method to configure GPIOs for VHF */
+int sddc_set_vhf_gpios(sddc_t* this) {
+    return usb_device_gpio_set(this->usb_device, 0, GPIO_ATT_SEL0 | GPIO_ATT_SEL1);
 }

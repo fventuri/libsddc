@@ -324,6 +324,7 @@ usb_device_t *usb_device_open(int index, const char* imagefile,
   this->bulk_in_max_packet_size = bulk_in_max_packet_size;
   this->bulk_in_max_burst = bulk_in_max_burst;
   this->gpio_register = gpio_register;
+  memset(this->fw_registers, 0, sizeof(this->fw_registers));
 
   ret_val = this;
   return ret_val;
@@ -366,6 +367,7 @@ int usb_device_control(usb_device_t *this, uint8_t request, uint16_t value,
     case STARTFX3:
     case STOPFX3:
     case RESETFX3:
+    case R82XXSTDBY:
       ret = libusb_control_transfer(this->dev_handle, bmWriteRequestType,
                                     request, 0, 0, dummy, sizeof(dummy),
                                     timeout);
@@ -376,8 +378,6 @@ int usb_device_control(usb_device_t *this, uint8_t request, uint16_t value,
       break;
     case TESTFX3:
     case I2CRFX3:
-    case R820T2INIT:
-    case R820T2GETATT:
       ret = libusb_control_transfer(this->dev_handle, bmReadRequestType,
                                     request, value, index, data, length,
                                     timeout);
@@ -388,15 +388,20 @@ int usb_device_control(usb_device_t *this, uint8_t request, uint16_t value,
       break;
     case GPIOFX3:
     case I2CWFX3:
-    case DAT31FX3:
-    case SI5351A:
-    case R820T2STDBY:
-    case R820T2TUNE:
-    case R820T2SETATT:
-    case R820T2SETVGA:
-    case AD8340FX3:
+    case STARTADC:
+    case R82XXINIT:
+    case R82XXTUNE:
       ret = libusb_control_transfer(this->dev_handle, bmWriteRequestType,
                                     request, value, index, data, length,
+                                    timeout);
+      if (ret < 0) {
+        log_usb_error(ret, __func__, __FILE__, __LINE__);
+        return -1;
+      }
+      break;
+    case SETARGFX3:
+      ret = libusb_control_transfer(this->dev_handle, bmWriteRequestType,
+                                    request, value, index, dummy, sizeof(dummy),
                                     timeout);
       if (ret < 0) {
         log_usb_error(ret, __func__, __FILE__, __LINE__);
@@ -475,6 +480,33 @@ int usb_device_i2c_read(usb_device_t *this, uint8_t i2c_address,
                             (uint16_t) register_address, data,
                             (uint16_t) length);
 }
+
+
+/* firmware registers */
+uint16_t usb_device_get_fw_register(usb_device_t *this, uint16_t address) {
+  if (address >= MAX_FW_REGISTERS) {
+    fprintf(stderr, "ERROR - usb_device_get_fw_register() failed - invalid register address: %d\n", address);
+  }
+  return this->fw_registers[address];
+}
+
+
+int usb_device_set_fw_register(usb_device_t *this, uint16_t address,
+                                    uint16_t value) {
+  if (address >= MAX_FW_REGISTERS) {
+    fprintf(stderr, "ERROR - usb_device_set_fw_register() failed - invalid register address: %d\n", address);
+  }
+  int ret = usb_device_control(this, SETARGFX3, address, value, 0, 0);
+  if (ret < 0) {
+    fprintf(stderr, "ERROR - usb_device_control(SETARGFX3) failed\n");
+    return -1;
+  }
+  this->fw_registers[address] = value;
+  return 0;
+}
+
+
+
 
 
 /* internal functions */
