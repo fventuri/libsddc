@@ -182,10 +182,6 @@ FAIL0:
 
 void sddc_close(sddc_t *this)
 {
-  int ret = usb_device_control(this->usb_device, RESETFX3, 0, 0, 0, 0);
-  if (ret < 0) {
-    fprintf(stderr, "ERROR - usb_device_control(RESETFX3) failed\n");
-  }
   usb_device_close(this->usb_device);
   free(this);
   return;
@@ -684,11 +680,9 @@ int sddc_stop_streaming(sddc_t *this)
   }
 
   /* stop ADC */
-  uint32_t data = 0;
-  ret = usb_device_control(this->usb_device, STARTADC, 0, 0, 
-                           (uint8_t *) &data, sizeof(data));
+  ret = usb_device_gpio_on(this->usb_device, GPIO_ADC_SHDN);
   if (ret < 0) {
-    fprintf(stderr, "ERROR - usb_device_control(STARTADC) failed\n");
+    fprintf(stderr, "ERROR - usb_device_gpio_on(ADC_SHDN) failed\n");
     return -1;
   }
 

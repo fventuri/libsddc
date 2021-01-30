@@ -84,6 +84,17 @@ int main(int argc, char **argv)
     goto DONE;
   }
 
+  if (sddc_set_rf_mode(sddc, HF_MODE) < 0) {
+    fprintf(stderr, "ERROR - sddc_set_rf_mode failed\n");
+    goto DONE;
+  }
+
+  /* TODO - double check */
+  if (sddc_set_hf_bias(sddc, 1) < 0) {
+    fprintf(stderr, "ERROR - sddc_set_hf_bias failed\n");
+    goto DONE;
+  }
+
   received_samples = 0;
   num_callbacks = 0;
   if (sddc_start_streaming(sddc) < 0) {
